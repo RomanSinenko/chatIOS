@@ -1,17 +1,58 @@
 import SwiftUI
 
 struct ChatsListView: View {
+    
+    let userID: Int
     // Имя пользователя приходит снаружи из ContentView.
     let userName: String
-    
     // Действие выхода приходит снаружи, потому что состояние входа хранит ContentView.
     let onLogout: () -> Void
     
+    // Список чатов, загруженный с backend.
+    @State private var chats: [ChatSummary] = []
+    // true, пока ждём ответ от backend.
+    @State private var isLoadingChats = false
+    // Текст ошибки загрузки чатов, если запрос не удался.
+    @State private var chatsErrorMessage: String?
+    
+    private let apiClient = APIClient()
+    
     var body: some View {
         List {
-            Section {
-                Text("Пока чатов нету")
-                    .foregroundStyle(.secondary)
+            if isLoadingChats {
+                Section {
+                    Text("Загрузка")
+                        .foregroundStyle(.secondary)
+                }
+            } else if let chatsErrorMessage {
+                Section{
+                    Text(chatsErrorMessage)
+                        .foregroundStyle(.red)
+                }
+            } else if chats.isEmpty {
+                Section {
+                    Text("Пока чатов нет")
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Section {
+                    ForEach(chats) { chat in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(chat.displayName)
+                                .font(.headline)
+                            
+                            if let lastMessage = chat.lastMessage {
+                                Text(lastMessage.text)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Сообщений пока нету")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
             }
         }
         .navigationTitle("Чаты")
@@ -31,11 +72,32 @@ struct ChatsListView: View {
                 }
             }
         }
+        // Когда экран появился, сразу запрашиваем чаты пользователя.
+        .onAppear {
+            loadChats()
+        }
+    }
+    
+    // Загружает чаты пользователя при открытии экрана.
+    private func loadChats() {
+        Task {
+            isLoadingChats = true
+            chatsErrorMessage = nil
+            
+            do {
+                chats = try await apiClient.getUserChats(userID: userID)
+            } catch {
+                chatsErrorMessage = "Не удалось загрузить чаты"
+                print("Load chats failed \(error)")
+            }
+            
+            isLoadingChats = false
+        }
     }
 }
 
 #Preview {
-    ChatsListView(userName: "Roman"){
+    ChatsListView(userID: 1, userName: "Roman"){
         print("Preview logout")
     }
 }

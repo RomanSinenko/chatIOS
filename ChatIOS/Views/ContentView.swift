@@ -19,7 +19,7 @@ struct ContentView: View {
         // NavigationStack нужен, чтобы дочерние экраны могли открывать следующие экраны.
         NavigationStack {
             if let currentUser {
-                ChatsListView(userName: currentUser.userName) {
+                ChatsListView(userID: currentUser.id, userName: currentUser.userName) {
                     // Выход очищает пользователя, поэтому SwiftUI снова покажет StartView.
                     self.currentUser = nil
                 }
