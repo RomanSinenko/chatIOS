@@ -22,7 +22,7 @@ MVP-экраны:
 ---
 
 # Текущий статус iOS
-Сейчас `ChatIOS` — это новый Xcode SwiftUI проект с базовым app skeleton и статическим chat-flow.
+Сейчас `ChatIOS` — это новый Xcode SwiftUI проект с базовым app skeleton, статическим chat-flow и первым подключением к backend.
 
 Что есть сейчас:
 - базовый `ChatIOSApp.swift`
@@ -33,9 +33,22 @@ MVP-экраны:
 - `ChatView.swift` для экрана конкретного чата
 - `Contact.swift` как временная модель контакта
 - `ChatMessage.swift` как временная модель сообщения
+- `ChatUser.swift` как модель пользователя из backend
+- `APIClient.swift` как простой HTTP client для backend
 - стандартные test / ui test файлы
 
-Пока сетевой слой, реальные users/chats/messages, поиск пользователей через backend и WebSocket не реализованы.
+Уже подключено:
+- `POST /users/{user_name}` со стартового экрана
+- успешное создание пользователя через backend
+- переход к списку чатов после успешного ответа
+- базовая обработка ошибок `400`, `409` и network/server unavailable
+
+Пока не реализованы:
+- загрузка списка чатов через backend
+- поиск пользователей через backend
+- создание private chat из iOS
+- загрузка истории сообщений
+- WebSocket
 
 ---
 
@@ -168,15 +181,54 @@ ContentView
 
 ---
 
+# Что сделано в большом шаге `ios-auth-api-client`
+Ветка: `ios-auth-api-client`
+
+Сделано:
+- создана модель `ChatUser`
+- добавлен `Decodable` для разбора JSON от backend
+- добавлен `CodingKeys`, чтобы связать backend поле `user_name` со Swift свойством `userName`
+- создан `APIClient`
+- добавлен базовый `baseURL` для локального backend `http://127.0.0.1:8000`
+- реализован `createUser(userName:)`
+- исправлена сборка URL через `appendingPathComponent`, чтобы не было двойного percent-encoding кириллицы
+- `ContentView` теперь хранит `currentUser: ChatUser?`, а не только имя строкой
+- `StartView` принимает `isLoading` и `errorMessage`
+- при нажатии `Продолжить` iOS отправляет `POST /users/{user_name}`
+- при успешном ответе backend пользователь сохраняется в `currentUser`
+- после успешного создания пользователя открывается `ChatsListView`
+- во время запроса кнопка показывает `Загрузка...`
+- при ошибке показывается сообщение на стартовом экране
+- для `400` показывается ошибка невалидного имени
+- для `409` показывается ошибка занятого имени
+- при недоступном backend показывается ошибка подключения
+
+Текущий auth flow:
+
+```text
+StartView
+  ввод имени
+    -> APIClient.createUser(userName)
+      -> POST /users/{user_name}
+        -> ChatUser(id, userName)
+          -> ContentView.currentUser
+            -> ChatsListView
+```
+
+Пока auth временный через username. В будущем планируется регистрация/вход по номеру телефона.
+
+---
+
 # Следующий большой шаг
-Следующий большой шаг: `ios-auth-api-client`
+Следующий большой шаг: `ios-user-chats-api-client`
 
 Цель:
-- подготовить простой HTTP API client для backend
-- создать модель пользователя
-- подключить `POST /users/{user_name}` к стартовому экрану
-- после успешного создания пользователя переходить к списку чатов
-- обработать базовые ошибки создания пользователя
+- создать iOS-модели для чата и последнего сообщения
+- добавить в `APIClient` запрос `GET /users/{user_id}/chats`
+- передавать `ChatUser.id` в `ChatsListView`
+- загружать список чатов после входа
+- показывать реальные чаты пользователя вместо статической заглушки
+- обрабатывать пустой список и базовые ошибки загрузки
 - пока без WebSocket
 
 ---
