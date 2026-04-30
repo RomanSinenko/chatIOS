@@ -28,6 +28,29 @@ struct APIClient {
         // Превращаем JSON-ответ backend в Swift-модель ChatUser.
         return try JSONDecoder().decode(ChatUser.self, from: data)
     }
+    
+    
+    // Загружает список чатов пользователя.
+    func getUserChats(userID: Int) async throws -> [ChatSummary] {
+        let url = baseURL
+            .appendingPathComponent("users")
+            .appendingPathComponent(String(userID))
+            .appendingPathComponent("chats")
+        
+        // Для GET-запроса достаточно URL, отдельный URLRequest не нужен.
+        let (data, response) = try await URLSession.shared.data(from: url)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIClientError.serverError(statusCode: httpResponse.statusCode)
+        }
+        
+        // Backend возвращает JSON-массив, поэтому декодируем [ChatSummary].
+        return try JSONDecoder().decode([ChatSummary].self, from: data)
+    }
 }
 
 // Ошибки, которые может вернуть APIClient.
