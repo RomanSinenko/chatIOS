@@ -8,6 +8,12 @@ struct StartView: View {
     // Сам экран не решает, куда идти дальше; он только отдаёт имя наружу.
     let onContinue: (String) -> Void
     
+    // true, пока идёт запрос создания пользователя.
+    let isLoading: Bool
+    
+    // Текст ошибки, который нужно показать под полем ввода.
+    let errorMessage: String?
+    
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
@@ -28,13 +34,20 @@ struct StartView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             
-            Button("Продолжить"){
+            // Показываем ошибку только если ContentView передал текст.
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+            
+            Button(isLoading ? "Загрузка..." : "Продолжить") {
                 // Убираем пробелы по краям, чтобы не принимать пустой ввод из пробелов.
                 let trimmedUserName = userName.trimmingCharacters(in: .whitespacesAndNewlines)
                 onContinue(trimmedUserName)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(isLoading || userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             
             Spacer()
         }
@@ -43,7 +56,12 @@ struct StartView: View {
 }
 
 #Preview {
-    StartView { userName in
+    StartView(
+        onContinue: { userName in
             print("Preview continue with user name: \(userName)")
-    }
+        },
+        isLoading: false,
+        errorMessage: nil
+    )
 }
+
