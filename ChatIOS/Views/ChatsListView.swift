@@ -3,8 +3,6 @@ import SwiftUI
 struct ChatsListView: View {
     
     let userID: Int
-    // Имя пользователя приходит снаружи из ContentView.
-    let userName: String
     // Действие выхода приходит снаружи, потому что состояние входа хранит ContentView.
     let onLogout: () -> Void
     
@@ -97,7 +95,7 @@ struct ChatsListView: View {
 }
 
 #Preview {
-    ChatsListView(userID: 1, userName: "Roman"){
+    ChatsListView(userID: 1){
         print("Preview logout")
     }
 }
