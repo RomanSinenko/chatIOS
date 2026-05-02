@@ -1,17 +1,17 @@
 import SwiftUI
 
 struct StartView: View {
-    // Локальный текст, который пользователь вводит в TextField.
-    @State private var userName = ""
+    // Телефон, который пользователь вводит для временного dev-login.
+    @State private var phone = ""
     
-    // Действие, которое StartView вызывает при нажатии "Продолжить".
-    // Сам экран не решает, куда идти дальше; он только отдаёт имя наружу.
+    // StartView отдаёт наружу телефон.
+    // Сам экран не решает, что делать дальше.
     let onContinue: (String) -> Void
     
-    // true, пока идёт запрос создания пользователя.
+    // true, пока идёт запрос входа/регистрации.
     let isLoading: Bool
     
-    // Текст ошибки, который нужно показать под полем ввода.
+    // Текст ошибки, который нужно показать под полями ввода.
     let errorMessage: String?
     
     var body: some View {
@@ -23,16 +23,15 @@ struct StartView: View {
                     .font(.largeTitle)
                     .fontWeight(.bold)
                 
-                Text("Войдите по имени пользователя, что бы открыть чат")
+                Text("Введите телефон, чтобы открыть чат")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
             
-            TextField("Имя пользователя", text: $userName)
+            TextField("Введите телефон", text: $phone)
                 .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+                .keyboardType(.phonePad)
             
             // Показываем ошибку только если ContentView передал текст.
             if let errorMessage {
@@ -43,11 +42,14 @@ struct StartView: View {
             
             Button(isLoading ? "Загрузка..." : "Продолжить") {
                 // Убираем пробелы по краям, чтобы не принимать пустой ввод из пробелов.
-                let trimmedUserName = userName.trimmingCharacters(in: .whitespacesAndNewlines)
-                onContinue(trimmedUserName)
+                let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+                
+                onContinue(trimmedPhone)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(isLoading || userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(isLoading ||
+                      phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            )
             
             Spacer()
         }
@@ -57,8 +59,8 @@ struct StartView: View {
 
 #Preview {
     StartView(
-        onContinue: { userName in
-            print("Preview continue with user name: \(userName)")
+        onContinue: { phone in
+            print("Preview continue with phone: \(phone)")
         },
         isLoading: false,
         errorMessage: nil
