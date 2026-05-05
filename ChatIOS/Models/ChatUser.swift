@@ -24,9 +24,31 @@ struct ChatUser: Decodable, Identifiable {
     }
 }
 
+
 // Ответ backend на dev-login.
 // user содержит данные пользователя, created показывает, был пользователь создан сейчас или найден по телефону.
 struct DevLoginResponse: Decodable {
     let user: ChatUser
     let created: Bool
+}
+
+
+// Пользователь, найденный через экран "Написать сообщение".
+struct UserSearchResult: Decodable, Identifiable {
+    // Внутренний id пользователя из backend.
+    let id: Int
+    // Публичный username, по которому пользователь был найден.
+    let username: String
+    // Отображаемое имя может быть пустым, если пользователь ещё не заполнил профиль.
+    let displayName: String?
+    // true, если username выбран пользователем и считается публичным.
+    let isUsernameCustom: Bool
+    
+    // Backend отдаёт snake_case, Swift-код использует camelCase.
+    enum CodingKeys: String, CodingKey {
+        case id
+        case username
+        case displayName = "display_name"
+        case isUsernameCustom = "is_username_custom"
+    }
 }

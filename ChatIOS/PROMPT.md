@@ -22,33 +22,36 @@ MVP-экраны:
 ---
 
 # Текущий статус iOS
-Сейчас `ChatIOS` — это новый Xcode SwiftUI проект с базовым app skeleton, статическим chat-flow и первым подключением к backend.
+Сейчас `ChatIOS` — это SwiftUI-проект с базовым app skeleton, phone-only входом, списком чатов и первым flow создания/открытия private chat через backend.
 
 Что есть сейчас:
 - базовый `ChatIOSApp.swift`
 - `ContentView.swift` как корневой экран с `NavigationStack`
 - `StartView.swift` для стартового входа
 - `ChatsListView.swift` для экрана списка чатов
-- `ContactsView.swift` для экрана контактов / выбора пользователя перед открытием чата
+- `NewMessageView.swift` для экрана `Написать сообщение`: поиск пользователя и открытие private chat
 - `ChatView.swift` для экрана конкретного чата
 - `Contact.swift` как временная модель контакта
 - `ChatMessage.swift` как временная модель сообщения
 - `ChatUser.swift` как модель пользователя из backend
+- `ChatSummary.swift`, `LastMessage.swift`, `PrivateChatResponse`, `UserSearchResult` как модели backend-ответов
 - `APIClient.swift` как простой HTTP client для backend
 - стандартные test / ui test файлы
 
 Уже подключено:
-- старый временный вход через `POST /users/{user_name}` со стартового экрана
-- успешное создание пользователя через backend по старому username-flow
+- временный phone-only dev-login через `POST /auth/dev-login?phone=...`
+- успешный вход/регистрация через backend по телефону без SMS
 - переход к списку чатов после успешного ответа
 - базовая обработка ошибок `400`, `409` и network/server unavailable
 - `GET /users/{user_id}/chats` для загрузки списка чатов пользователя
+- `GET /users/search?query=...` для exact global search по public/custom `username`
+- `POST /private-chats/{user_id}/{peer_user_id}` для создания или получения private chat
+- переход из `NewMessageView` в `ChatView` после успешного ответа backend
 
 Пока не реализованы:
-- новый dev-login через телефон
-- поиск пользователей через backend
-- создание private chat из iOS
+- передача в `ChatView` реальных backend-данных чата вместо временного `Contact`
 - загрузка истории сообщений
+- отправка сообщений через backend
 - WebSocket
 
 ---
@@ -115,6 +118,11 @@ WebSocket:
 - позже добавить privacy-настройки:
   - `show_phone_number`
   - `can_find_by_phone`
+- позже добавить smart search:
+  - case-insensitive поиск должен быть сразу
+  - `Elena` и `Елена` должны пониматься как близкие варианты имени
+  - учитывать латиницу/кириллицу, `ё/е`, Unicode-normalization, пробелы и возможные опечатки
+  - делать это отдельным backend/search шагом, не смешивать с MVP exact global search
 - добавить стабильные error codes в HTTP-ошибки, чтобы iOS не завязывался на текст `detail`
   - пример: `username_taken`, `username_too_short`, `username_invalid_characters`
 - позже пересмотреть endpoint создания/получения private chat под мобильный flow:
@@ -224,7 +232,7 @@ ContentView
 Важно:
 - этот раздел описывает уже выполненный исторический шаг
 - после backend-шага `backend-mobile-contract-polish` старый `user_name`-flow больше не является целевым
-- дальше iOS нужно переводить на `POST /auth/dev-login?phone=...`
+- позднее iOS был переведен на `POST /auth/dev-login?phone=...`
 
 Сделано:
 - создана модель `ChatUser`
@@ -288,55 +296,101 @@ StartView
 Пока ограничение:
 - этот раздел был актуален до backend-шага `backend-mobile-contract-polish`
 - сейчас backend уже умеет `POST /auth/dev-login?phone=...`
-- iOS ещё не переведён на этот endpoint, поэтому это и есть следующий большой шаг
+- iOS уже переведён на phone-only dev-login отдельным завершенным шагом
 
 ---
 
-# Следующий большой шаг
-Следующий большой шаг: `ios-dev-login-and-private-chat-flow`
+# Что сделано в большом шаге `ios-phone-only-dev-login`
 
-Цель:
-- перевести iOS со старого username-входа на новый backend dev-login по телефону
-- подготовить flow выбора пользователя и открытия private chat
-- начать открывать реальный чат с backend-данными, а не только статический экран
+Сделано:
+- backend dev-login переведен на `POST /auth/dev-login?phone=...`
+- `display_name` больше не передается при входе
+- `display_name` может быть `null`
+- `StartView` теперь показывает только поле телефона
+- `APIClient.devLogin(phone:)` отправляет только телефон
+- `ContentView` вызывает `devLogin(phone:)`
+- `ChatUser.displayName` стал `String?`
+- ручная проверка iOS + backend прошла:
+  - ввод телефона
+  - успешный backend-ответ
+  - переход на список чатов
 
-План внутри большого шага:
-- обновить `ChatUser` под новый backend response:
-  - `id`
+Решение по отображению другого пользователя:
+- сейчас backend показывает `display_name`, если он есть, иначе `username`
+- телефон другим пользователям не показывается
+- позже возможен приоритет:
+  - имя из телефонной книги текущего пользователя
+  - `display_name`
+  - номер, если владелец явно разрешил показ
   - `username`
-  - `display_name`, nullable
-  - `is_username_custom`
-  - `phone_verified`
-- обновить `APIClient`:
-  - добавить `devLogin(phone:)`
-  - использовать `POST /auth/dev-login?phone=...`
-- обновить `StartView`:
-  - ввод только телефона
-  - без SMS на этом этапе
-- обновить `ContentView`:
-  - вызывать новый `devLogin`
-  - сохранять текущего пользователя из нового ответа
-- обновить поиск/контакты:
-  - искать пользователей через `GET /users/search?query=...`
-  - искать только по `username`, не по `display_name`
-- добавить создание/получение private chat:
-  - `POST /private-chats/{user_id}/{peer_user_id}`
-- открыть `ChatView` с backend-данными:
-  - `chat_id`
-  - `current_user_id`
-  - `peer_user_id`
-  - имя собеседника
-- загрузить историю:
-  - `GET /chats/{chat_id}/messages?user_id=...`
-- WebSocket оставить следующим отдельным большим шагом, если объем станет слишком большим.
+
+---
+
+# Что сделано в большом шаге `ios-user-search-and-private-chat`
+Ветка: `ios-user-search-and-private-chat`
+
+Сделано:
+- `ContactsView.swift` заменён на `NewMessageView.swift`, потому что экран отвечает не за полный список контактов, а за сценарий `Написать сообщение`
+- кнопка с карандашом на `ChatsListView` открывает `NewMessageView`
+- `NewMessageView` принимает `currentUserID`
+- добавлено поле поиска с иконкой лупы
+- локальный список контактов пока пустой, потому что модель контактов приложения ещё не реализована
+- добавлены состояния:
+  - поиск
+  - ошибка поиска
+  - ошибка открытия private chat
+  - пустой результат
+  - блокировка повторного нажатия во время открытия чата
+- добавлена модель `UserSearchResult`
+- добавлен `APIClient.searchUsers(query:)`
+- global search использует `GET /users/search?query=...`
+- global search ищет только exact public/custom `username`, без partial / substring
+- из результатов iOS убирает текущего пользователя, чтобы нельзя было найти самого себя
+- результат поиска показывает:
+  - сверху `display_name`, если есть, иначе `username`
+  - ниже `@username` меньшим синим шрифтом
+- добавлена модель `PrivateChatResponse`
+- добавлен `APIClient.getOrCreatePrivateChat(currentUserID:peerUserID:)`
+- при выборе найденного пользователя iOS вызывает `POST /private-chats/{user_id}/{peer_user_id}`
+- после успешного ответа backend iOS открывает `ChatView`
+- flow вручную проверен: авторизация -> список чатов -> карандаш -> поиск пользователя -> выбор пользователя -> открытие чата
+
+Ограничение текущей реализации:
+- `ChatView` пока открывается через временный `Contact`
+- `chat_id`, `current_user_id`, `peer_user_id` пока не передаются в `ChatView`
+- история сообщений, отправка сообщений и WebSocket ещё не подключены
 
 Пока не делаем:
 - SMS/OTP
 - JWT/session auth
+- Settings
 - поиск по телефону
 - отображение телефона другим пользователям
 - группы
 - звонки
+- поиск по существующим чатам
+- поиск участников группы
+- smart search `Elena` / `Елена` в текущем шаге
+
+---
+
+# Следующий большой шаг
+Следующий большой шаг: `ios-chat-real-data-and-history`
+
+Цель:
+- убрать временный переход в `ChatView` через `Contact`
+- передавать в `ChatView` реальные backend-данные:
+  - `chat_id`
+  - `current_user_id`
+  - `peer_user_id`
+  - имя собеседника для заголовка
+- добавить загрузку истории сообщений через `GET /chats/{chat_id}/messages?user_id=...`
+- показать состояния `loading`, `empty`, `error`, `content`
+- пока не подключать WebSocket, если scope начнёт расти
+
+Первый короткий шаг:
+- создать отдельную модель/структуру данных для открытия чата из iOS
+- заменить временный `Contact` в переходе из `NewMessageView` на данные private chat
 
 ---
 
