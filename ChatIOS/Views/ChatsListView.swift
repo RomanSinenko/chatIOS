@@ -12,6 +12,8 @@ struct ChatsListView: View {
     @State private var isLoadingChats = false
     // Текст ошибки загрузки чатов, если запрос не удался.
     @State private var chatsErrorMessage: String?
+    // true, когда нужно открыть экран создания нового сообщения.
+    @State private var isNewMessageScreenOpen = false
     
     private let apiClient = APIClient()
     
@@ -62,13 +64,16 @@ struct ChatsListView: View {
             }
             
             ToolbarItem(placement: .topBarTrailing) {
-                // Карандаш открывает экран контактов перед созданием/открытием чата.
-                NavigationLink {
-                    ContactsView()
+                // Карандаш меняет состояние, а navigationDestination ниже открывает экран.
+                Button {
+                    isNewMessageScreenOpen = true
                 } label: {
                     Image(systemName: "square.and.pencil")
                 }
             }
+        }
+        .navigationDestination(isPresented: $isNewMessageScreenOpen) {
+            NewMessageView(currentUserID: userID)
         }
         // Когда экран появился, сразу запрашиваем чаты пользователя.
         .onAppear {

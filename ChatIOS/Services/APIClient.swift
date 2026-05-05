@@ -62,6 +62,61 @@ struct APIClient {
         // Backend возвращает JSON-массив, поэтому декодируем [ChatSummary].
         return try JSONDecoder().decode([ChatSummary].self, from: data)
     }
+    
+    // Ищет пользователя по точному public/custom username.
+    func searchUsers(query: String) async throws -> [UserSearchResult] {
+        let url = baseURL
+            .appendingPathComponent("users")
+            .appendingPathComponent("search")
+        
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "query", value: query)
+        ]
+        
+        guard let fullURL = components?.url else {
+            throw APIClientError.invalidResponse
+        }
+        
+        let (data, response) = try await URLSession.shared.data(from: fullURL)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIClientError.serverError(statusCode: httpResponse.statusCode)
+        }
+        
+        return try JSONDecoder().decode([UserSearchResult].self, from: data)
+    }
+    
+    // Создает или получает private chat между текущим пользователем и найденным пользователем.
+    func getOrCreatePrivateChat(
+        currentUserID: Int,
+        peerUserID: Int
+    ) async throws -> PrivateChatResponse {
+        let url = baseURL
+            .appendingPathComponent("private-chats")
+            .appendingPathComponent(String(currentUserID))
+            .appendingPathComponent(String(peerUserID))
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        print("POST private chat url: \(url)")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIClientError.serverError(statusCode: httpResponse.statusCode)
+        }
+        
+        return try JSONDecoder().decode(PrivateChatResponse.self, from: data)
+    }
 }
 
 // Ошибки, которые может вернуть APIClient.

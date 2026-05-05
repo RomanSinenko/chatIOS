@@ -21,3 +21,23 @@ struct ChatSummary: Decodable, Identifiable {
         case lastMessage = "last_message"
     }
 }
+
+// Ответ backend на создание или получение private chat.
+struct PrivateChatResponse: Decodable {
+    // Внутренний id чата из backend.
+    let id: Int
+    // Тип чата. Backend всегда должен вернуть значение: private, self, group и т.д.
+    let chatType: String
+    // id собеседника, которого выбрали в поиске.
+    let peerUserID: Int
+    // true, если backend создал новый чат; false, если вернул существующий.
+    let created: Bool
+    
+    // Связываем snake_case из backend с camelCase в Swift.
+    enum CodingKeys: String, CodingKey {
+        case id
+        case chatType = "chat_type"
+        case peerUserID = "peer_user_id"
+        case created
+    }
+}
