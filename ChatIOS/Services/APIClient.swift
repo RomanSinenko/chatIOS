@@ -63,6 +63,75 @@ struct APIClient {
         return try JSONDecoder().decode([ChatSummary].self, from: data)
     }
     
+    
+    // Загружает историю сообщений конкретного чата.
+    func fetchMessages(
+        chatID: Int,
+        userID: Int
+    ) async throws -> [BackendChatMessage] {
+        let url = baseURL
+            .appendingPathComponent("chats")
+            .appendingPathComponent(String(chatID))
+            .appendingPathComponent("messages")
+        
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.queryItems = [
+            URLQueryItem(name: "user_id", value: String(userID)),
+            URLQueryItem(name: "limit", value: "50")
+        ]
+        
+        guard let fullURL = components?.url else {
+            throw APIClientError.invalidResponse
+        }
+        
+        let (data, response) = try await URLSession.shared.data(from: fullURL)
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIClientError.invalidResponse
+        }
+        
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIClientError.serverError(statusCode: httpResponse.statusCode)
+        }
+        
+        // История сообщений содержит даты, поэтому настраиваем decoder отдельно.
+        // Backend может вернуть ISO-дату как с миллисекундами, так и без них.
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .custom { decoder in
+            // Для поля Date decoder получает одно JSON-значение: строку created_at.
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+            
+            // Первый форматтер читает даты с долями секунды, например .081.
+            let formatterWithFractionalSeconds = ISO8601DateFormatter()
+            formatterWithFractionalSeconds.formatOptions = [
+                .withInternetDateTime,
+                .withFractionalSeconds
+            ]
+            
+            if let date = formatterWithFractionalSeconds.date(from: dateString) {
+                return date
+            }
+            
+            // Второй форматтер нужен как запасной вариант для даты без миллисекунд.
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            
+            if let date = formatter.date(from: dateString) {
+                return date
+            }
+            
+            // Если оба формата не подошли, явно падаем с понятным описанием.
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Invalid date format: \(dateString)"
+            )
+        }
+        
+        return try decoder.decode([BackendChatMessage].self, from: data)
+    }
+    
+    
     // Ищет пользователя по точному public/custom username.
     func searchUsers(query: String) async throws -> [UserSearchResult] {
         let url = baseURL

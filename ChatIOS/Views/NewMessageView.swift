@@ -19,8 +19,8 @@ struct NewMessageView: View {
     @State private var isOpeningChat = false
     // Текст ошибки открытия private chat.
     @State private var openChatErrorMessage: String?
-    // Контакт, для которого нужно открыть экран чата после успешного ответа backend.
-    @State private var selectedContact: Contact?
+    // Данные чата, который нужно открыть после успешного ответа backend.
+    @State private var selectedChat: ChatScreenContext?
 
     
     private let apiClient = APIClient()
@@ -70,13 +70,9 @@ struct NewMessageView: View {
             
             if !isSearching || hasContactResults {
                 Section("Контакты") {
-                    // Каждая строка списка открывает чат с выбранным контактом.
+                    // Контакты приложения пока не подключены, поэтому строки не открывают чат.
                     ForEach(visibleContacts) { contact in
-                        NavigationLink {
-                            ChatView(contact: contact)
-                        } label: {
                             Text(contact.name)
-                        }
                     }
                 }
             }
@@ -130,8 +126,8 @@ struct NewMessageView: View {
             openChatErrorMessage = nil
             runGlobalSearch()
         }
-        .navigationDestination(item: $selectedContact) { contact in
-            ChatView(contact: contact)
+        .navigationDestination(item: $selectedChat) { chatContext in
+            ChatView(chatContext: chatContext)
         }
         .navigationTitle("Написать сообщение")
     }
@@ -180,9 +176,11 @@ struct NewMessageView: View {
                 
                 print("Opened private chat \(chat.id)")
                 
-                selectedContact = Contact(
-                    id: user.id,
-                    name: user.displayName ?? user.username
+                selectedChat = ChatScreenContext(
+                    id: chat.id,
+                    currentUserID: currentUserID,
+                    peerUserID: chat.peerUserID,
+                    displayName: user.displayName ?? user.username
                 )
             } catch {
                 openChatErrorMessage = "Не удалось открыть чат"
