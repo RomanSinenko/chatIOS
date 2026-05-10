@@ -37,18 +37,30 @@ struct ChatsListView: View {
             } else {
                 Section {
                     ForEach(chats) { chat in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(chat.displayName)
-                                .font(.headline)
-                            
-                            if let lastMessage = chat.lastMessage {
-                                Text(lastMessage.text)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            } else {
-                                Text("Сообщений пока нету")
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
+                        // Переход открывает тот же ChatView, но уже с backend id выбранного чата.
+                        NavigationLink {
+                            ChatView(
+                                chatContext: ChatScreenContext(
+                                    id: chat.id,
+                                    currentUserID: userID,
+                                    peerUserID: chat.peerUserID ?? userID,
+                                    displayName: chat.displayName
+                                )
+                            )
+                        } label: {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(chat.displayName)
+                                    .font(.headline)
+                                
+                                if let lastMessage = chat.lastMessage {
+                                    Text(lastMessage.text)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                } else {
+                                    Text("Сообщений пока нет")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }

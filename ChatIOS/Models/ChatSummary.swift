@@ -6,6 +6,7 @@ struct ChatSummary: Decodable, Identifiable {
     let chatType: String
     let title: String?
     let displayName: String
+    let peerUserID: Int?
     let membersCount: Int
     let createdAt: String
     let lastMessage: LastMessage?
@@ -16,6 +17,7 @@ struct ChatSummary: Decodable, Identifiable {
         case chatType = "chat_type"
         case title
         case displayName = "display_name"
+        case peerUserID = "peer_user_id"
         case membersCount = "members_count"
         case createdAt = "created_at"
         case lastMessage = "last_message"
