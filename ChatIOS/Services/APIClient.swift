@@ -1,5 +1,11 @@
 import Foundation
 
+
+// Тело запроса для временного входа по телефону.
+private struct DevLoginRequest: Encodable {
+    let phone: String
+}
+
 struct APIClient {
     // Локальный адрес backend для запуска из iOS Simulator.
     private let baseURL = URL(string: "http://127.0.0.1:8000")!
@@ -10,22 +16,12 @@ struct APIClient {
             .appendingPathComponent("auth")
             .appendingPathComponent("dev-login")
         
-        var allowedCharacters = CharacterSet.urlQueryAllowed
-        allowedCharacters.remove(charactersIn: "+&=")
-        
-        guard let encodedPhone = phone.addingPercentEncoding(withAllowedCharacters: allowedCharacters) else {
-            throw APIClientError.invalidResponse
-        }
-        
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        components?.percentEncodedQuery = "phone=\(encodedPhone)"
-        
-        guard let fullURL = components?.url else {
-            throw APIClientError.invalidResponse
-        }
-        
-        var request = URLRequest(url: fullURL)
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        
+        let body = DevLoginRequest(phone: phone)
+        request.httpBody = try JSONEncoder().encode(body)
         
         let (data, response) = try await URLSession.shared.data(for: request)
         

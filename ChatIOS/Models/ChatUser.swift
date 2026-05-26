@@ -26,10 +26,18 @@ struct ChatUser: Decodable, Identifiable {
 
 
 // Ответ backend на dev-login.
-// user содержит данные пользователя, created показывает, был пользователь создан сейчас или найден по телефону.
+// user содержит данные пользователя, sessionToken нужен для защищённых ручек,
+// created показывает, был пользователь создан сейчас или найден по телефону.
 struct DevLoginResponse: Decodable {
     let user: ChatUser
+    let sessionToken: String
     let created: Bool
+    
+    enum CodingKeys: String, CodingKey {
+        case user
+        case sessionToken = "session_token"
+        case created
+    }
 }
 
 
