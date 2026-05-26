@@ -1,8 +1,11 @@
 import SwiftUI
 
+
 struct ChatsListView: View {
     
     let userID: Int
+    // Session token нужен для защищённых backend-ручек.
+    let sessionToken: String
     // Действие выхода приходит снаружи, потому что состояние входа хранит ContentView.
     let onLogout: () -> Void
     
@@ -45,7 +48,8 @@ struct ChatsListView: View {
                                     currentUserID: userID,
                                     peerUserID: chat.peerUserID ?? userID,
                                     displayName: chat.displayName
-                                )
+                                ),
+                                sessionToken: sessionToken
                             )
                         } label: {
                             VStack(alignment: .leading, spacing: 4) {
@@ -85,7 +89,10 @@ struct ChatsListView: View {
             }
         }
         .navigationDestination(isPresented: $isNewMessageScreenOpen) {
-            NewMessageView(currentUserID: userID)
+            NewMessageView(
+                currentUserID: userID,
+                sessionToken: sessionToken
+            )
         }
         // Когда экран появился, сразу запрашиваем чаты пользователя.
         .onAppear {
@@ -100,7 +107,7 @@ struct ChatsListView: View {
             chatsErrorMessage = nil
             
             do {
-                chats = try await apiClient.getUserChats(userID: userID)
+                chats = try await apiClient.getUserChats(sessionToken: sessionToken)
             } catch {
                 chatsErrorMessage = "Не удалось загрузить чаты"
                 print("Load chats failed \(error)")
@@ -112,7 +119,10 @@ struct ChatsListView: View {
 }
 
 #Preview {
-    ChatsListView(userID: 1){
+    ChatsListView(
+        userID: 1,
+        sessionToken: "preview-token"
+    ) {
         print("Preview logout")
     }
 }

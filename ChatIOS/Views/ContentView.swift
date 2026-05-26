@@ -5,6 +5,10 @@ struct ContentView: View {
     // Когда здесь появляется пользователь, показываем экран чатов.
     @State private var currentUser: ChatUser?
     
+    // Session token приходит от backend после входа.
+    // Его нужно передавать в защищённые ручки через Authorization header.
+    @State private var sessionToken: String?
+    
     // true, пока iOS ждёт ответ от backend при входе/регистрации.
     @State private var isCreatingUser = false
     
@@ -18,10 +22,14 @@ struct ContentView: View {
     var body: some View {
         // NavigationStack нужен, чтобы дочерние экраны могли открывать следующие экраны.
         NavigationStack {
-            if let currentUser {
-                ChatsListView(userID: currentUser.id) {
-                    // Выход очищает пользователя, поэтому SwiftUI снова покажет StartView.
+            if let currentUser, let sessionToken {
+                ChatsListView(
+                    userID: currentUser.id,
+                    sessionToken: sessionToken
+                ) {
+                    // Выход очищает пользователя и token, поэтому SwiftUI снова покажет StartView.
                     self.currentUser = nil
+                    self.sessionToken = nil
                 }
             } else {
                 StartView(
@@ -34,6 +42,7 @@ struct ContentView: View {
                             do {
                                 let loginResponse = try await apiClient.devLogin(phone: phone)
                                 currentUser = loginResponse.user
+                                sessionToken = loginResponse.sessionToken
                             } catch {
                                 // Если backend ответил ошибочным HTTP-кодом, показываем текст по status code.
                                 if case APIClientError.serverError(let statusCode) = error {

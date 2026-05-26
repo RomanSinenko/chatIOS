@@ -5,6 +5,9 @@ struct ChatView: View {
     // Контекст чата приходит из списка чатов или с экрана создания нового сообщения.
     let chatContext: ChatScreenContext
     
+    // Session token нужен для защищенной загрузки истории сообщений.
+    let sessionToken: String
+    
     // Текст, который пользователь вводит в нижнем поле.
     @State private var messageText = ""
     
@@ -118,7 +121,7 @@ struct ChatView: View {
             do {
                 messages = try await apiClient.fetchMessages(
                     chatID: chatContext.id,
-                    userID: chatContext.currentUserID
+                    sessionToken: sessionToken
                 )
             } catch {
                 messagesErrorMessage = "Не удалось загрузить сообщения"
@@ -138,7 +141,8 @@ struct ChatView: View {
                 currentUserID: 1,
                 peerUserID: 2,
                 displayName: "Alena"
-            )
+            ),
+            sessionToken: "preview-token"
         )
     }
 }

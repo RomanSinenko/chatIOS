@@ -6,6 +6,18 @@ private struct DevLoginRequest: Encodable {
     let phone: String
 }
 
+
+// Тело запроса для создания или получения private chat.
+// Собеседника отправляем в body, а текущего пользователя backend берёт из token.
+private struct PrivateChatRequest: Encodable {
+    let peerUserID: Int
+    
+    enum CodingKeys: String, CodingKey {
+        case peerUserID = "peer_user_id"
+    }
+}
+
+
 struct APIClient {
     // Локальный адрес backend для запуска из iOS Simulator.
     private let baseURL = URL(string: "http://127.0.0.1:8000")!
@@ -37,15 +49,18 @@ struct APIClient {
     }
 
     
-    // Загружает список чатов пользователя.
-    func getUserChats(userID: Int) async throws -> [ChatSummary] {
+    // Загружает список чатов текущего пользователя.
+    // Backend определяет пользователя по Authorization token.
+    func getUserChats(sessionToken: String) async throws -> [ChatSummary] {
         let url = baseURL
             .appendingPathComponent("users")
-            .appendingPathComponent(String(userID))
+            .appendingPathComponent("me")
             .appendingPathComponent("chats")
         
-        // Для GET-запроса достаточно URL, отдельный URLRequest не нужен.
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
@@ -55,15 +70,15 @@ struct APIClient {
             throw APIClientError.serverError(statusCode: httpResponse.statusCode)
         }
         
-        // Backend возвращает JSON-массив, поэтому декодируем [ChatSummary].
         return try JSONDecoder().decode([ChatSummary].self, from: data)
     }
     
     
     // Загружает историю сообщений конкретного чата.
+    // Backend определяет текущего пользователя по Authorization token.
     func fetchMessages(
         chatID: Int,
-        userID: Int
+        sessionToken: String
     ) async throws -> [BackendChatMessage] {
         let url = baseURL
             .appendingPathComponent("chats")
@@ -72,15 +87,18 @@ struct APIClient {
         
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
         components?.queryItems = [
-            URLQueryItem(name: "user_id", value: String(userID)),
-            URLQueryItem(name: "limit", value: "50")
+            URLQueryItem(name: "limit", value: "50"),
+            URLQueryItem(name: "offset", value: "0")
         ]
         
         guard let fullURL = components?.url else {
             throw APIClientError.invalidResponse
         }
         
-        let (data, response) = try await URLSession.shared.data(from: fullURL)
+        var request = URLRequest(url: fullURL)
+        request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
@@ -94,11 +112,9 @@ struct APIClient {
         // Backend может вернуть ISO-дату как с миллисекундами, так и без них.
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .custom { decoder in
-            // Для поля Date decoder получает одно JSON-значение: строку created_at.
             let container = try decoder.singleValueContainer()
             let dateString = try container.decode(String.self)
             
-            // Первый форматтер читает даты с долями секунды, например .081.
             let formatterWithFractionalSeconds = ISO8601DateFormatter()
             formatterWithFractionalSeconds.formatOptions = [
                 .withInternetDateTime,
@@ -109,7 +125,6 @@ struct APIClient {
                 return date
             }
             
-            // Второй форматтер нужен как запасной вариант для даты без миллисекунд.
             let formatter = ISO8601DateFormatter()
             formatter.formatOptions = [.withInternetDateTime]
             
@@ -117,7 +132,6 @@ struct APIClient {
                 return date
             }
             
-            // Если оба формата не подошли, явно падаем с понятным описанием.
             throw DecodingError.dataCorruptedError(
                 in: container,
                 debugDescription: "Invalid date format: \(dateString)"
@@ -126,10 +140,14 @@ struct APIClient {
         
         return try decoder.decode([BackendChatMessage].self, from: data)
     }
-    
+
     
     // Ищет пользователя по точному public/custom username.
-    func searchUsers(query: String) async throws -> [UserSearchResult] {
+    // Backend проверяет текущего пользователя по Authorization token.
+    func searchUsers(
+        query: String,
+        sessionToken: String
+    ) async throws -> [UserSearchResult] {
         let url = baseURL
             .appendingPathComponent("users")
             .appendingPathComponent("search")
@@ -143,7 +161,10 @@ struct APIClient {
             throw APIClientError.invalidResponse
         }
         
-        let (data, response) = try await URLSession.shared.data(from: fullURL)
+        var request = URLRequest(url: fullURL)
+        request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIClientError.invalidResponse
@@ -155,20 +176,24 @@ struct APIClient {
         
         return try JSONDecoder().decode([UserSearchResult].self, from: data)
     }
+
     
     // Создает или получает private chat между текущим пользователем и найденным пользователем.
+    // Текущий пользователь определяется по Authorization token.
     func getOrCreatePrivateChat(
-        currentUserID: Int,
-        peerUserID: Int
+        peerUserID: Int,
+        sessionToken: String
     ) async throws -> PrivateChatResponse {
         let url = baseURL
             .appendingPathComponent("private-chats")
-            .appendingPathComponent(String(currentUserID))
-            .appendingPathComponent(String(peerUserID))
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        print("POST private chat url: \(url)")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+        
+        let body = PrivateChatRequest(peerUserID: peerUserID)
+        request.httpBody = try JSONEncoder().encode(body)
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
