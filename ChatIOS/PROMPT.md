@@ -39,17 +39,19 @@ MVP-экраны:
 - стандартные test / ui test файлы
 
 Уже подключено:
-- временный phone-only dev-login через `POST /auth/dev-login?phone=...`
+- временный phone-only dev-login через `POST /auth/dev-login` с JSON body `{ "phone": "..." }`
+- сохранение `session_token` после входа в `ContentView`
+- передача `session_token` в защищённые HTTP-запросы через header `Authorization: Bearer <session_token>`
 - успешный вход/регистрация через backend по телефону без SMS
 - переход к списку чатов после успешного ответа
 - базовая обработка ошибок `400`, `409` и network/server unavailable
-- `GET /users/{user_id}/chats` для загрузки списка чатов пользователя
+- `GET /users/me/chats` для загрузки списка чатов текущего пользователя
 - `GET /users/search?query=...` для exact global search по public/custom `username`
-- `POST /private-chats/{user_id}/{peer_user_id}` для создания или получения private chat
+- `POST /private-chats` с body `{ "peer_user_id": ... }` для создания или получения private chat
 - переход из `NewMessageView` в `ChatView` после успешного ответа backend
 - передача в `ChatView` реальных backend-данных чата через `ChatScreenContext`
 - переход в `ChatView` из списка чатов
-- `GET /chats/{chat_id}/messages?user_id=...&limit=50` для загрузки истории сообщений
+- `GET /chats/{chat_id}/messages?limit=50&offset=0` для загрузки истории сообщений
 - состояния истории сообщений: загрузка, пусто, ошибка, контент
 - кнопка `Обновить` при ошибке загрузки истории
 - декодирование `created_at` сообщений в `Date`
@@ -64,21 +66,23 @@ MVP-экраны:
 Backend уже существует и умеет базовый chat MVP.
 
 Основные готовые HTTP endpoints:
-- `POST /auth/dev-login?phone=...` — временный вход/регистрация по телефону без SMS
+- `POST /auth/dev-login` — временный вход/регистрация по телефону без SMS, телефон в JSON body
 - `POST /users/{username}?display_name=...` — dev-создание пользователя с custom username
-- `GET /users/search?query=...` — поиск пользователей только по `username`
-- `POST /private-chats/{user_id}/{peer_user_id}` — найти или создать private chat
-- `GET /users/{user_id}/chats` — список чатов пользователя
-- `GET /chats/{chat_id}?user_id=...` — мета-информация о чате
-- `GET /chats/{chat_id}/messages?user_id=...` — история сообщений с membership check
+- `GET /users/search?query=...` — поиск пользователей только по `username`, требует `Authorization`
+- `POST /private-chats` — найти или создать private chat, требует `Authorization`, собеседник в body
+- `GET /users/me/chats` — список чатов текущего пользователя, требует `Authorization`
+- `GET /chats/{chat_id}` — мета-информация о чате, требует `Authorization`
+- `GET /chats/{chat_id}/messages?limit=50&offset=0` — история сообщений с membership check, требует `Authorization`
 
 WebSocket:
-- `WS /ws/{user_id}`
+- `WS /ws` — подключение с `Authorization: Bearer <session_token>`
 
 Формат исходящего сообщения от клиента:
 
 ```json
 {
+  "type": "send_message",
+  "client_message_id": "client-generated-id",
   "chat_id": 1,
   "to_user_id": 2,
   "text": "hello"
@@ -115,7 +119,7 @@ WebSocket:
 Нужно:
 - позже заменить dev-login по телефону на полноценную авторизацию:
   - SMS/OTP
-  - сессии/токены
+  - постоянное хранение и восстановление активной сессии при старте приложения
   - устройства пользователя
 - позже добавить возможность менять дефолтный `username`, если новый свободен
 - позже добавить Settings для `display_name`, `username` и logout
@@ -236,7 +240,7 @@ ContentView
 Важно:
 - этот раздел описывает уже выполненный исторический шаг
 - после backend-шага `backend-mobile-contract-polish` старый `user_name`-flow больше не является целевым
-- позднее iOS был переведен на `POST /auth/dev-login?phone=...`
+- позднее iOS был переведен на `POST /auth/dev-login` с JSON body `{ "phone": "..." }`
 
 Сделано:
 - создана модель `ChatUser`
@@ -279,15 +283,16 @@ StartView
 Сделано:
 - создана модель `LastMessage`
 - создана модель `ChatSummary`
-- добавлен `APIClient.getUserChats(userID:)`
-- `ChatsListView` теперь принимает `userID`
-- `ContentView` передаёт `currentUser.id` в `ChatsListView`
+- добавлен `APIClient.getUserChats(sessionToken:)`
+- `ChatsListView` теперь принимает `sessionToken`
+- `ContentView` передаёт `sessionToken` в `ChatsListView`
 - `ChatsListView` хранит состояние загрузки чатов:
   - `chats`
   - `isLoadingChats`
   - `chatsErrorMessage`
 - при открытии `ChatsListView` вызывается загрузка чатов через `.onAppear`
-- список чатов загружается через `GET /users/{user_id}/chats`
+- список чатов загружается через `GET /users/me/chats`
+- запрос списка чатов отправляет `Authorization: Bearer <session_token>`
 - UI показывает состояния:
   - загрузка
   - ошибка
@@ -299,15 +304,17 @@ StartView
 
 Пока ограничение:
 - этот раздел был актуален до backend-шага `backend-mobile-contract-polish`
-- сейчас backend уже умеет `POST /auth/dev-login?phone=...`
-- iOS уже переведён на phone-only dev-login отдельным завершенным шагом
+- сейчас backend уже умеет `POST /auth/dev-login` с JSON body `{ "phone": "..." }`
+- iOS уже переведён на phone-only dev-login и session-token auth отдельными завершенными шагами
 
 ---
 
 # Что сделано в большом шаге `ios-phone-only-dev-login`
 
 Сделано:
-- backend dev-login переведен на `POST /auth/dev-login?phone=...`
+- backend dev-login переведен на `POST /auth/dev-login` с JSON body `{ "phone": "..." }`
+- backend возвращает `session_token`
+- `ContentView` сохраняет `session_token` в состоянии экрана
 - `display_name` больше не передается при входе
 - `display_name` может быть `null`
 - `StartView` теперь показывает только поле телефона
@@ -337,6 +344,7 @@ StartView
 - `ContactsView.swift` заменён на `NewMessageView.swift`, потому что экран отвечает не за полный список контактов, а за сценарий `Написать сообщение`
 - кнопка с карандашом на `ChatsListView` открывает `NewMessageView`
 - `NewMessageView` принимает `currentUserID`
+- `NewMessageView` принимает `sessionToken` для защищённых backend-запросов
 - добавлено поле поиска с иконкой лупы
 - локальный список контактов пока пустой, потому что модель контактов приложения ещё не реализована
 - добавлены состояния:
@@ -346,16 +354,19 @@ StartView
   - пустой результат
   - блокировка повторного нажатия во время открытия чата
 - добавлена модель `UserSearchResult`
-- добавлен `APIClient.searchUsers(query:)`
+- добавлен `APIClient.searchUsers(query:sessionToken:)`
 - global search использует `GET /users/search?query=...`
+- global search отправляет `Authorization: Bearer <session_token>`
 - global search ищет только exact public/custom `username`, без partial / substring
 - из результатов iOS убирает текущего пользователя, чтобы нельзя было найти самого себя
 - результат поиска показывает:
   - сверху `display_name`, если есть, иначе `username`
   - ниже `@username` меньшим синим шрифтом
 - добавлена модель `PrivateChatResponse`
-- добавлен `APIClient.getOrCreatePrivateChat(currentUserID:peerUserID:)`
-- при выборе найденного пользователя iOS вызывает `POST /private-chats/{user_id}/{peer_user_id}`
+- добавлен `APIClient.getOrCreatePrivateChat(peerUserID:sessionToken:)`
+- при выборе найденного пользователя iOS вызывает `POST /private-chats`
+- собеседник передаётся в JSON body `{ "peer_user_id": ... }`
+- создание или получение private chat отправляет `Authorization: Bearer <session_token>`
 - после успешного ответа backend iOS открывает `ChatView`
 - flow вручную проверен: авторизация -> список чатов -> карандаш -> поиск пользователя -> выбор пользователя -> открытие чата
 
@@ -364,7 +375,7 @@ StartView
 
 Пока не делаем:
 - SMS/OTP
-- JWT/session auth
+- постоянное хранение и восстановление сессии при старте приложения
 - Settings
 - поиск по телефону
 - отображение телефона другим пользователям
@@ -387,11 +398,12 @@ StartView
   - `peer_user_id`
   - имя собеседника для заголовка
 - создана структура `ChatScreenContext`
-- `NewMessageView` после `POST /private-chats/{user_id}/{peer_user_id}` открывает `ChatView` с реальным `chat_id`
+- `NewMessageView` после `POST /private-chats` открывает `ChatView` с реальным `chat_id`
 - `ChatsListView` открывает существующий чат через `NavigationLink`
 - добавлена модель `BackendChatMessage`
-- добавлен `APIClient.fetchMessages(chatID:userID:)`
-- история загружается через `GET /chats/{chat_id}/messages?user_id=...&limit=50`
+- добавлен `APIClient.fetchMessages(chatID:sessionToken:)`
+- история загружается через `GET /chats/{chat_id}/messages?limit=50&offset=0`
+- загрузка истории отправляет `Authorization: Bearer <session_token>`
 - `created_at` сообщений декодируется в `Date`
 - добавлена поддержка ISO-дат с миллисекундами и без миллисекунд
 - `ChatView` показывает состояния:
@@ -433,6 +445,33 @@ StartView
 - сверить backend-контракт отправки сообщения
 - выбрать минимальный способ для следующего шага: HTTP endpoint или WebSocket
 - если backend уже готов только через WebSocket, сначала спроектировать простой iOS `WebSocketClient`
+
+---
+
+# Что сделано в шаге `ios-fix-authenticated-chat-list`
+Ветка: `ios-fix-authenticated-chat-list`
+
+Причина шага:
+- backend перешёл на защищённые endpoints через `session_token`
+- старый iOS-контракт с `user_id` в URL/query перестал подходить
+
+Сделано:
+- `ContentView` хранит `sessionToken`, полученный из `DevLoginResponse`
+- `ChatsListView`, `NewMessageView`, `ChatView` получают `sessionToken`
+- `APIClient.devLogin(phone:)` отправляет телефон в JSON body
+- `APIClient.getUserChats(sessionToken:)` вызывает `GET /users/me/chats`
+- `APIClient.fetchMessages(chatID:sessionToken:)` вызывает `GET /chats/{chat_id}/messages?limit=50&offset=0`
+- `APIClient.searchUsers(query:sessionToken:)` вызывает `GET /users/search?query=...`
+- `APIClient.getOrCreatePrivateChat(peerUserID:sessionToken:)` вызывает `POST /private-chats`
+- все защищённые HTTP-запросы отправляют `Authorization: Bearer <session_token>`
+- `user_id` больше не отправляется в URL/query для авторизации
+- `user_id` остаётся локально в iOS только для UI-логики:
+  - определить, какие сообщения мои
+  - убрать текущего пользователя из результатов поиска
+
+Важно:
+- если пользователь ищет свой же `username`, backend/frontend могут вернуть пустой результат намеренно
+- текущего пользователя нельзя выбирать как собеседника через global search
 
 ---
 

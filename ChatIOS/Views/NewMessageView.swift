@@ -4,6 +4,9 @@ struct NewMessageView: View {
     // ID текущего пользователя
     let currentUserID: Int
     
+    // Session token передаём дальше в ChatView для защищённых запросов.
+    let sessionToken: String
+    
     // Контакты приложения пока не подключены, поэтому список пустой.
     private let contacts: [Contact] = []
     
@@ -127,7 +130,10 @@ struct NewMessageView: View {
             runGlobalSearch()
         }
         .navigationDestination(item: $selectedChat) { chatContext in
-            ChatView(chatContext: chatContext)
+            ChatView(
+                chatContext: chatContext,
+                sessionToken: sessionToken
+            )
         }
         .navigationTitle("Написать сообщение")
     }
@@ -147,7 +153,10 @@ struct NewMessageView: View {
             searchErrorMessage = nil
             
             do {
-                let users = try await apiClient.searchUsers(query: query)
+                let users = try await apiClient.searchUsers(
+                    query: query,
+                    sessionToken: sessionToken
+                )
                 globalSearchResults = users.filter { user in
                     user.id != currentUserID
                 }
@@ -170,8 +179,8 @@ struct NewMessageView: View {
             
             do {
                 let chat = try await apiClient.getOrCreatePrivateChat(
-                    currentUserID: currentUserID,
-                    peerUserID: user.id
+                    peerUserID: user.id,
+                    sessionToken: sessionToken
                 )
                 
                 print("Opened private chat \(chat.id)")
@@ -191,8 +200,12 @@ struct NewMessageView: View {
         }
     }
 }
+
 #Preview {
     NavigationStack {
-        NewMessageView(currentUserID: 1)
+        NewMessageView(
+            currentUserID: 1,
+            sessionToken: "preview-token"
+        )
     }
 }
