@@ -8,6 +8,9 @@ struct ChatView: View {
     // Session token нужен для защищенной загрузки истории сообщений.
     let sessionToken: String
     
+    // Позволяет закрыть текущий экран и вернуться назад.
+    @Environment(\.dismiss) private var dismiss
+    
     // Текст, который пользователь вводит в нижнем поле.
     @State private var messageText = ""
     
@@ -106,7 +109,38 @@ struct ChatView: View {
             }
             .padding()
         }
-        .navigationTitle(chatContext.displayName)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbarColorScheme(.light, for: .navigationBar)
+        .toolbar {
+            // Кастомная кнопка назад: скрываем системную кнопку и рисуем свою,
+            // чтобы управлять размером, прозрачностью и цветом круглого контейнера.
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color.black)
+                        .frame(width: 24, height: 24)
+                        .background {
+                            Circle()
+                                .fill(Color.white.opacity(0.05))
+                        }
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Кастомный title чата: имя собеседника показывается в центре navigation bar
+            // в контейнере-капсуле, который сам подстраивается под длину имени.
+            ToolbarItem(placement: .principal) {
+                Text(chatContext.displayName)
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(Color.black)
+                    .lineLimit(1)
+            }
+        }
         .onAppear {
             loadMessages()
         }
