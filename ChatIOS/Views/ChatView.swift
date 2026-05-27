@@ -26,57 +26,67 @@ struct ChatView: View {
     // HTTP-клиент для запросов к backend.
     private let apiClient = APIClient()
     
+    // Невидимая точка в самом низу списка сообщений.
+    // Позже все автоскроллы будут идти именно к ней, а не к последнему сообщению.
+    private let bottomAnchorID = "chat-bottom-anchor"
+    
+    // Высота будущей нижней зоны ввода.
+    // Пока input старый, но ленту сообщений уже готовим под floating input.
+    private let reservedInputAreaHeight: CGFloat = 72
+
+    // Фиксированный зазор между последним сообщением и input.
+    // Это расстояние должно быть одинаковым при первом входе, автоскролле и ручном скролле вниз.
+    private let messageInputGap: CGFloat = 8
+    
     
     var body: some View {
-        VStack(spacing: 0) {
-            List {
-                if isLoadingMessages {
-                    HStack {
-                        Spacer()
-                        ProgressView("Загружаем сообщения")
-                        Spacer()
-                    }
-                    .listRowSeparator(.hidden)
-                } else if messagesErrorMessage != nil {
-                    // Ошибку показываем ниже отдельным блоком с кнопкой повторной загрузки.
-                    EmptyView()
-                } else if messages.isEmpty {
-                    
-                    HStack {
-                        Spacer()
-                        Text("Сообщений пока нет")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .listRowSeparator(.hidden)
-                    
-                } else {
-                    ForEach(messages) { message in
-                        // Сообщение считается моим, если sender_id совпал с текущим пользователем.
-                        let isMine = message.senderID == chatContext.currentUserID
-                        
-                        HStack {
-                            // Spacer перед текстом прижимает моё сообщение вправо.
-                            if isMine {
-                                Spacer()
-                            }
-                            
-                            Text(message.text)
-                                .padding(10)
-                                .background(isMine ? Color.blue : Color.gray.opacity(0.2))
-                                .foregroundStyle(isMine ? .white : .primary)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                            
-                            // Spacer после текста оставляет сообщение собеседника слева.
-                            if !isMine {
-                                Spacer()
+        ZStack(alignment: .bottom) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        if isLoadingMessages {
+                            ProgressView("Загружаем сообщения")
+                                .padding()
+                        } else if messagesErrorMessage != nil {
+                            EmptyView()
+                        } else if messages.isEmpty {
+                            Text("Сообщений пока нет")
+                                .foregroundStyle(.secondary)
+                                .padding()
+                        } else {
+                            ForEach(messages) { message in
+                                let isMine = message.senderID == chatContext.currentUserID
+
+                                HStack {
+                                    if isMine {
+                                        Spacer()
+                                    }
+
+                                    Text(message.text)
+                                        .padding(10)
+                                        .background(isMine ? Color.blue : Color.gray.opacity(0.2))
+                                        .foregroundStyle(isMine ? .white : .primary)
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                                    if !isMine {
+                                        Spacer()
+                                    }
+                                }
                             }
                         }
-                        .listRowSeparator(.hidden)
+
+                        Color.clear
+                            .frame(height: reservedInputAreaHeight + messageInputGap)
+                            .id(bottomAnchorID)
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                }
+                .scrollIndicators(.hidden)
+                .onChange(of: messages.count) {
+                    scrollToBottom(proxy, animated: false)
                 }
             }
-            
             if messagesErrorMessage != nil {
                 // Блок виден только если загрузка истории завершилась ошибкой.
                 VStack(spacing: 8) {
@@ -92,22 +102,60 @@ struct ChatView: View {
                 }
                 .padding()
             }
+
+            // Нижний overlay поверх чата: размывает и высветляет сообщения под полем ввода.
+            // Сам input остается кликабельным, потому что этот слой ниже отключает hit testing.
+            VStack(spacing: 0) {
+                Spacer()
+
+                Rectangle()
+                    // Сила системного blur. Можно пробовать .ultraThinMaterial, .thinMaterial, .regularMaterial.
+                    .fill(.thinMaterial)
+                    // Маска задает, где blur начинается и где становится полностью видимым.
+                    .mask(
+                        LinearGradient(
+                            colors: [
+                                Color.clear,
+                                Color.black.opacity(0.85),
+                                Color.black
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    // Белый градиент поверх blur делает сообщения под input менее читаемыми.
+                    .overlay(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.0),
+                                Color.white.opacity(0.25),
+                                Color.white.opacity(0.45)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    // Высота зоны эффекта зависит от зарезервированной высоты нижнего input.
+                    .frame(height: reservedInputAreaHeight)
+            }
+            .ignoresSafeArea(edges: .bottom)
+            .allowsHitTesting(false)
             
-            // Отправку сообщений реализуем отдельным шагом.
-            // Пока показываем заблокированное поле, чтобы не создавать ложное поведение.
             HStack {
-                TextField("Отправка сообщений будет добавлена позже", text: $messageText)
+                TextField("Сообщение", text: $messageText)
                     .textFieldStyle(.roundedBorder)
                     .disabled(true)
-                
+
                 Button {
-                    
+
                 } label: {
                     Image(systemName: "paperplane.fill")
                 }
                 .disabled(true)
             }
-            .padding()
+            .padding(.horizontal, 20)
+            .padding(.bottom, 18)
+            
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
@@ -143,6 +191,18 @@ struct ChatView: View {
         }
         .onAppear {
             loadMessages()
+        }
+    }
+    
+    // Скроллит чат к единому нижнему якорю.
+    // Используем anchor .bottom, чтобы нижний spacer оказался внизу видимой области.
+    private func scrollToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
+        if animated {
+            withAnimation(.easeOut(duration: 0.25)) {
+                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+            }
+        } else {
+            proxy.scrollTo(bottomAnchorID, anchor: .bottom)
         }
     }
     
