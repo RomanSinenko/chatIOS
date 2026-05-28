@@ -11,6 +11,9 @@ struct ChatView: View {
     // Позволяет закрыть текущий экран и вернуться назад.
     @Environment(\.dismiss) private var dismiss
     
+    // Общая память черновиков для всех чатов.
+    @EnvironmentObject private var chatDraftStore: ChatDraftStore
+    
     // Текст, который пользователь вводит в нижнем поле.
     @State private var messageText = ""
     
@@ -27,16 +30,26 @@ struct ChatView: View {
     private let apiClient = APIClient()
     
     // Невидимая точка в самом низу списка сообщений.
-    // Позже все автоскроллы будут идти именно к ней, а не к последнему сообщению.
     private let bottomAnchorID = "chat-bottom-anchor"
     
-    // Высота будущей нижней зоны ввода.
-    // Пока input старый, но ленту сообщений уже готовим под floating input.
-    private let reservedInputAreaHeight: CGFloat = 72
+    // Минимальная высота нижней зоны input.
+    private let minimumInputAreaHeight: CGFloat = 72
+
+    // Фактическая высота нижней зоны input.
+    @State private var inputAreaHeight: CGFloat = 72
 
     // Фиксированный зазор между последним сообщением и input.
-    // Это расстояние должно быть одинаковым при первом входе, автоскролле и ручном скролле вниз.
     private let messageInputGap: CGFloat = 8
+    
+    // Готовит текст к отправке: убирает пробелы по краям.
+    private var trimmedMessageText: String {
+        messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // Управляет состоянием кнопки отправки.
+    private var canSendMessage: Bool {
+        !trimmedMessageText.isEmpty
+    }
     
     
     var body: some View {
@@ -76,7 +89,7 @@ struct ChatView: View {
                         }
 
                         Color.clear
-                            .frame(height: reservedInputAreaHeight + messageInputGap)
+                            .frame(height: inputAreaHeight + messageInputGap)
                             .id(bottomAnchorID)
                     }
                     .padding(.horizontal, 16)
@@ -136,25 +149,55 @@ struct ChatView: View {
                         )
                     )
                     // Высота зоны эффекта зависит от зарезервированной высоты нижнего input.
-                    .frame(height: reservedInputAreaHeight)
+                    .frame(height: inputAreaHeight)
             }
             .ignoresSafeArea(edges: .bottom)
             .allowsHitTesting(false)
             
-            HStack {
-                TextField("Сообщение", text: $messageText)
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(true)
+            // Нижняя панель ввода.
+            // Настройки: lineLimit, minHeight, cornerRadius, horizontal/bottom padding.
+            HStack(alignment: .bottom, spacing: 8) {
+                // Многострочное поле ввода.
+                // lineLimit(1...15): input растет вверх до 15 строк, потом текст скроллится внутри поля.
+                TextField("Сообщение", text: $messageText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 17))
+                    .lineLimit(1...13)
+                    .padding(.leading, 16)
+                    .padding(.vertical, 11)
 
+                // Кнопка отправки. При росте input остается в нижнем правом углу.
                 Button {
 
                 } label: {
                     Image(systemName: "paperplane.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.white)
+                        // Форма кнопки: width больше height = капсула с круглыми боками.
+                        .frame(width: 44, height: 34)
+                        .background(canSendMessage ? Color.blue : Color.gray.opacity(0.18))
+                        .clipShape(Capsule())
                 }
-                .disabled(true)
+                .disabled(!canSendMessage)
+                .opacity(canSendMessage ? 1 : 0)
+                .padding(.trailing, 6)
+                .padding(.bottom, 7)
+            }
+            .frame(minHeight: 48)
+            .background(Color.white.opacity(0.92))
+            .clipShape(RoundedRectangle(cornerRadius: 24))
+            .overlay {
+                RoundedRectangle(cornerRadius: 24)
+                    .stroke(Color.gray.opacity(0.18), lineWidth: 1)
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 18)
+            .onGeometryChange(for: CGFloat.self) { geometry in
+                geometry.size.height
+            } action: { newHeight in
+                inputAreaHeight = max(newHeight, minimumInputAreaHeight)
+            }
+            .animation(.easeInOut(duration: 0.15), value: canSendMessage)
             
         }
         .navigationTitle("")
@@ -190,7 +233,11 @@ struct ChatView: View {
             }
         }
         .onAppear {
+            messageText = chatDraftStore.draft(for: chatContext.id)
             loadMessages()
+        }
+        .onChange(of: messageText) {
+            chatDraftStore.setDraft(messageText, for: chatContext.id)
         }
     }
     
@@ -239,4 +286,5 @@ struct ChatView: View {
             sessionToken: "preview-token"
         )
     }
+    .environmentObject(ChatDraftStore())
 }
