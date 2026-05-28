@@ -19,6 +19,9 @@ struct ContentView: View {
     // Клиент для HTTP-запросов к backend.
     private let apiClient = APIClient()
     
+    // Память черновиков input по chatID.
+    @StateObject private var chatDraftStore = ChatDraftStore()
+    
     var body: some View {
         // NavigationStack нужен, чтобы дочерние экраны могли открывать следующие экраны.
         NavigationStack {
@@ -67,6 +70,7 @@ struct ContentView: View {
                 )
             }
         }
+        .environmentObject(chatDraftStore)
     }
 }
 
