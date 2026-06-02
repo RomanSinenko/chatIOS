@@ -1,6 +1,8 @@
 import Foundation
 
-// Короткая модель чата для экрана списка чатов
+// MARK: - Chat List
+
+// Короткая модель чата для экрана списка чатов.
 struct ChatSummary: Decodable, Identifiable {
     let id: Int
     let chatType: String
@@ -24,17 +26,15 @@ struct ChatSummary: Decodable, Identifiable {
     }
 }
 
+// MARK: - Private Chat
+
 // Ответ backend на создание или получение private chat.
 struct PrivateChatResponse: Decodable {
-    // Внутренний id чата из backend.
     let id: Int
-    // Тип чата. Backend всегда должен вернуть значение: private, self, group и т.д.
     let chatType: String
-    // id собеседника, которого выбрали в поиске.
     let peerUserID: Int
-    // true, если backend создал новый чат; false, если вернул существующий.
     let created: Bool
-    
+
     // Связываем snake_case из backend с camelCase в Swift.
     enum CodingKeys: String, CodingKey {
         case id

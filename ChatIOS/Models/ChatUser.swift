@@ -1,18 +1,14 @@
 import Foundation
 
-// Модель пользователя, которую backend возвращает после создания.
+// MARK: - Auth
+
+// Модель пользователя из backend auth-flow.
 struct ChatUser: Decodable, Identifiable {
-    // Внутренний id пользователя из backend.
     let id: Int
-    // Уникальный публичный идентификатор пользователя, например user_a1b2c3d4 или roman.
     let username: String
-    // Отображаемое имя. Оно не уникальное: "Роман", "Alena", "Магазин колес".
     let displayName: String?
-    // true, если пользователь сам поменял дефолтный username.
     let isUsernameCustom: Bool
-    // true после SMS/OTP подтверждения.
     let phoneVerified: Bool
-    
 
     // Связываем snake_case поля из backend с camelCase свойствами в Swift.
     enum CodingKeys: String, CodingKey {
@@ -24,10 +20,7 @@ struct ChatUser: Decodable, Identifiable {
     }
 }
 
-
 // Ответ backend на dev-login.
-// user содержит данные пользователя, sessionToken нужен для защищённых ручек,
-// created показывает, был пользователь создан сейчас или найден по телефону.
 struct DevLoginResponse: Decodable {
     let user: ChatUser
     let sessionToken: String
@@ -40,18 +33,15 @@ struct DevLoginResponse: Decodable {
     }
 }
 
+// MARK: - Search
 
 // Пользователь, найденный через экран "Написать сообщение".
 struct UserSearchResult: Decodable, Identifiable {
-    // Внутренний id пользователя из backend.
     let id: Int
-    // Публичный username, по которому пользователь был найден.
     let username: String
-    // Отображаемое имя может быть пустым, если пользователь ещё не заполнил профиль.
     let displayName: String?
-    // true, если username выбран пользователем и считается публичным.
     let isUsernameCustom: Bool
-    
+
     // Backend отдаёт snake_case, Swift-код использует camelCase.
     enum CodingKeys: String, CodingKey {
         case id

@@ -22,7 +22,7 @@ MVP-экраны:
 ---
 
 # Текущий статус iOS
-Сейчас `ChatIOS` — это SwiftUI-проект с базовым app skeleton, phone-only входом, списком чатов и первым flow создания/открытия private chat через backend.
+Сейчас `ChatIOS` — это SwiftUI-проект с phone-only входом, списком чатов, поиском пользователей, открытием private chat, историей сообщений, оформленным input, базовым scroll-contract экрана чата и live-получением сообщений через WebSocket.
 
 Что есть сейчас:
 - базовый `ChatIOSApp.swift`
@@ -35,7 +35,11 @@ MVP-экраны:
 - `ChatMessage.swift` как временная модель сообщения
 - `ChatUser.swift` как модель пользователя из backend
 - `ChatSummary.swift`, `LastMessage.swift`, `PrivateChatResponse`, `UserSearchResult` как модели backend-ответов
+- `ChatWebSocketEvent.swift` как модель входящего WebSocket-события
+- `ChatRealtimeStore.swift` как общий realtime-store выше списка чатов и экрана чата
 - `APIClient.swift` как простой HTTP client для backend
+- `BackendJSONDecoder.swift` для декодирования backend ISO-дат
+- `ChatWebSocketClient.swift` для подключения к `WS /ws`
 - стандартные test / ui test файлы
 
 Уже подключено:
@@ -61,19 +65,26 @@ MVP-экраны:
 - кнопка отправки находится внутри input и появляется только при наличии текста
 - нижний blur/material и spacer синхронизированы с фактической высотой input
 - черновик input сохраняется отдельно по `chat_id` через `ChatDraftStore`
+- `ChatScrollPositionStore` для памяти scroll-позиции отдельно по `chat_id`
+- базовое открытие чата внизу после первой загрузки истории
+- восстановление сохраненной scroll-позиции по message id
+- кнопка быстрого перехода вниз
+- WebSocket-подключение к `WS /ws` с `Authorization: Bearer <session_token>`
+- прием server event `type = "message"`
+- общий `ChatRealtimeStore`, который проброшен через `.environmentObject`
+- live-обновление preview последнего сообщения в `ChatsListView`
+- live-добавление входящего сообщения в открытый `ChatView`
+- автоскролл вниз при live-сообщении, если пользователь уже находится внизу
+- счетчик новых входящих сообщений на кнопке вниз, если пользователь читает старые сообщения
+- badge непрочитанных сообщений в списке чатов на основе текущего realtime-состояния
 
 Пока не реализовано на iOS / в работе:
-- стабильный scroll-contract чата:
-  - одинаковая нижняя позиция при первом входе, кнопке вниз и ручном скролле вниз
-  - сохранение позиции отдельно по каждому `chat_id`
-  - если пользователь ушёл вверх и вышел из чата, при возврате нужно восстановить позицию
-  - если пользователь не внизу, новые сообщения не должны делать автоскролл
-  - при новых входящих сообщениях не внизу должна появляться кнопка вниз/счетчик
 - отправка сообщений из iOS через готовый backend `WS /ws`
 - обработка `message_ack` на iOS
-- live-получение входящих сообщений без выхода/возврата в чат
 - экран `Settings`: изменение `username`, `display_name`, logout
 - сохранение сессии после закрытия приложения через будущий backend `GET /users/me`
+- серверный источник правды для unread counters / read-state
+- восстановление unread counters после logout/login или перезапуска приложения
 
 ---
 
@@ -122,9 +133,43 @@ WebSocket:
 - self-chat
 - список чатов
 - история сообщений
-- WebSocket realtime через `WS /ws`; текущая задача iOS — подключить клиентскую отправку/приём событий
+- WebSocket realtime через `WS /ws`; текущая задача iOS — сначала подключить live-приём событий и общий realtime-state, затем отдельным подшагом outgoing send/ack
 - `message_ack`
 - membership checks
+
+---
+
+# Архитектурное Решение По Unread / Read-State
+
+Текущий iOS `ChatRealtimeStore` может временно показывать счетчики входящих сообщений внутри активной сессии, но не должен быть источником правды для непрочитанных сообщений.
+
+Причина:
+- если счетчик живет только в `StateObject`, он теряется после logout/login или перезапуска приложения
+- unread-состояние относится к пользователю и чату, поэтому должно храниться на backend
+- после нового входа `GET /users/me/chats` должен вернуть реальные unread-счетчики
+
+Ориентир по Telegram:
+- в Telegram `dialog` содержит `unread_count`, `read_inbox_max_id`, `read_outbox_max_id`
+- список диалогов возвращает серверное состояние диалогов
+- чтение истории отмечается отдельной операцией уровня `messages.readHistory`
+
+Для нашего проекта правильный будущий backend-контракт:
+- добавить per-user/per-chat read-state, например `chat_read_states` или поле на `chat_members`
+- хранить последний прочитанный incoming message id, например `last_read_message_id`
+- вернуть `unread_count` в `GET /users/me/chats`
+- добавить endpoint или WebSocket event для mark-as-read, когда пользователь дошел до низа чата
+- iOS после загрузки списка чатов инициализирует badge из backend `unread_count`
+- live WebSocket-события могут временно увеличивать локальный счетчик до следующей синхронизации
+
+Важно:
+- при logout можно очищать локальный realtime-store, но после нового login счетчики должны прийти с backend
+- пока backend не хранит read-state, нельзя считать текущие iOS badge полноценной постоянной логикой unread
+- `message_ack = saved` не является delivered/read статусом
+
+Ссылки для сверки:
+- `https://core.telegram.org/constructor/dialog`
+- `https://core.telegram.org/method/messages.getDialogs`
+- `https://core.telegram.org/method/messages.readHistory`
 
 ---
 
@@ -162,23 +207,45 @@ WebSocket:
 ---
 
 # Текущий фокус
-Текущий большой iOS-шаг: `ios-chat-scroll-contract`.
+Последний большой iOS-шаг перед merge: `ios-chat-websocket-realtime`.
 
-Цель шага:
-- сделать устойчивую архитектуру скролла экрана чата
-- обеспечить одинаковый нижний отступ между последним сообщением и input во всех сценариях
-- сохранять позицию отдельно для каждого `chat_id`
-- при повторном входе открывать чат либо внизу, либо на сохраненной позиции
-- не делать автоскролл при новых сообщениях, если пользователь читает старые сообщения
-- подготовить кнопку вниз и счетчик новых сообщений
+Текущая ветка iOS:
+- `ios-chat-websocket-realtime`
+
+Откуда стартовали:
+- `main` содержит merge-коммит `0449863 Merge chat scroll contract`
+- `ios-chat-websocket-realtime` создана от этого же состояния
+- branch `ios-chat-scroll-contract` завершен, влит в `main` и запушен на GitHub
+
+Что сделано в шаге:
+- подключить iOS к backend `WS /ws` через `Authorization: Bearer <session_token>`
+- принимать server event `type = "message"`
+- обновлять preview последнего сообщения в `ChatsListView` без переоткрытия экрана
+- добавлять входящее сообщение в открытый `ChatView` без выхода/возврата
+- если чат внизу, после live-сообщения оставаться внизу
+- если пользователь ушел вверх, не делать автоскролл и готовить счетчик на кнопке вниз
+- показывать badge непрочитанных сообщений в списке чатов на основе текущей realtime-сессии
+
+Проверка:
+- `xcodebuild -project ChatIOS.xcodeproj -scheme ChatIOS -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build` проходил успешно после последних изменений
+
+Следующий большой iOS-шаг:
+- `ios-settings-screen`
+
+Цель следующего шага:
+- перенести logout из списка чатов в экран `Settings`
+- добавить экран настроек
+- подготовить UI для изменения `username` и `display_name`
+- после готовности backend endpoints подключить сохранение настроек
 
 Важно:
 - работать на уровне `/Users/romansinenko/Desktop/prog/Chat`
 - backend и ios лежат в отдельных директориях
 - без явной команды не менять backend
-- input уже сделан как overlay и может менять высоту
-- scroll должен учитывать фактическую высоту input
-- WebSocket/send/ack пока не подключать, пока scroll-contract не стабилен
+- input и базовый scroll-contract уже сделаны
+- новый realtime-слой не должен ломать scroll-память и нижний input overlay
+- WebSocket должен жить выше конкретного `ChatView`, а не создаваться отдельно на каждый чат
+- `ChatsListView` и `ChatView` должны получать live-обновления из общего state/store
 - Swift/SwiftUI код давать небольшими логическими кусками и объяснять методы/модификаторы
 - если правильный контракт уже понятен, делать сразу нормальную реализацию, а не временное решение “на 10 минут”
 - временные решения допустимы только если они явно помечены и согласованы
@@ -188,6 +255,34 @@ WebSocket:
 
 # История старых шагов
 Ниже исторические записи по уже пройденным веткам. Если они противоречат верхним разделам `Текущий статус iOS`, `Что важно про backend` или `Текущий фокус`, актуальными считать верхние разделы.
+
+---
+
+# Что сделано в большом шаге `ios-chat-scroll-contract`
+Ветка: `ios-chat-scroll-contract`
+
+Сделано:
+- добавлен `ChatScrollPositionStore`
+- `ChatScrollPositionStore` подключен через `.environmentObject`
+- `ChatView` получил память scroll-позиции отдельно по `chat_id`
+- сообщения получили `.id(message.id)` для восстановления позиции через `ScrollViewReader`
+- добавлен первичный scroll вниз после загрузки истории
+- добавлено восстановление позиции по сохраненному message id
+- добавлена кнопка быстрого перехода вниз
+- кнопка вниз появляется, когда последнее сообщение не видно
+- нажатие кнопки вниз скроллит к нижнему якорю и сбрасывает счетчик новых сообщений
+- нижний spacer продолжает учитывать высоту input
+- базовый input/draft-flow сохранен
+
+Проверка:
+- `xcodebuild -project ChatIOS.xcodeproj -scheme ChatIOS -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build` прошел успешно
+- ветка влита в `main` merge-коммитом `0449863 Merge chat scroll contract`
+- `main` запушен на GitHub
+
+Ограничения после шага:
+- память позиции работает базово, но может требовать полировки при дальнейшем усложнении списка сообщений
+- счетчик новых incoming-сообщений на кнопке вниз еще не подключен к live-событиям
+- live WebSocket-события еще не подключены к Swift state
 
 ---
 
