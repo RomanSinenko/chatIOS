@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ChatView: View {
-    // MARK: - Input
+    // MARK: - Input Data
 
     let chatContext: ChatScreenContext
     let sessionToken: String
@@ -11,6 +11,7 @@ struct ChatView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var chatDraftStore: ChatDraftStore
     @EnvironmentObject private var chatScrollPositionStore: ChatScrollPositionStore
+    @EnvironmentObject private var chatRealtimeStore: ChatRealtimeStore
 
     // MARK: - State
 
@@ -25,9 +26,6 @@ struct ChatView: View {
     @State private var hasOpenedInitialPosition = false
     @State private var newIncomingMessagesCount = 0
 
-    @State private var scrollViewportHeight: CGFloat = 0
-    @State private var bottomAnchorMaxY: CGFloat = 0
-
     // MARK: - Dependencies
 
     private let apiClient = APIClient()
@@ -37,7 +35,6 @@ struct ChatView: View {
     private let bottomAnchorID = "chat-bottom-anchor"
     private let minimumInputAreaHeight: CGFloat = 72
     private let messageInputGap: CGFloat = 8
-    private let bottomDetectionTolerance: CGFloat = 12
 
     // MARK: - Computed Properties
 
@@ -70,6 +67,9 @@ struct ChatView: View {
         .onAppear {
             handleAppear()
         }
+        .onDisappear {
+            handleDisappear()
+        }
         .onChange(of: messageText) {
             saveDraft()
         }
@@ -91,6 +91,9 @@ struct ChatView: View {
             .scrollIndicators(.hidden)
             .onChange(of: isLoadingMessages) {
                 openInitialScrollPosition(proxy)
+            }
+            .onChange(of: chatRealtimeStore.latestMessage?.id) {
+                handleRealtimeMessage(proxy)
             }
             .onScrollTargetVisibilityChange(idType: Int.self) { visibleIDs in
                 updateVisibleMessages(visibleIDs)
@@ -235,35 +238,48 @@ struct ChatView: View {
         }
         .animation(.easeInOut(duration: 0.15), value: canSendMessage)
     }
-    
+
     // Кнопка быстрого перехода к последнему сообщению.
+    // Настройки: размер кнопки, trailing padding, bottom padding.
     @ViewBuilder
     private func scrollDownButton(_ proxy: ScrollViewProxy) -> some View {
         if !isAtBottom {
             Button {
                 scrollToBottom(proxy)
             } label: {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(.black)
-                    .frame(width: 44, height: 44) // Размер кнопки.
-                    .background(Color.white.opacity(0.92))
-                    .clipShape(Circle())
-                    .overlay(
-                        Circle()
-                            .stroke(Color.gray.opacity(0.18), lineWidth: 1)
-                    )
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 44, height: 44)
+                        .background(Color.white.opacity(0.92))
+                        .clipShape(Circle())
+                        .overlay(
+                            Circle()
+                                .stroke(Color.gray.opacity(0.18), lineWidth: 1)
+                        )
+
+                    if newIncomingMessagesCount > 0 {
+                        Text("\(newIncomingMessagesCount)")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 20, minHeight: 20)
+                            .background(Color.blue)
+                            .clipShape(Capsule())
+                            .offset(x: 8, y: -8)
+                    }
+                }
             }
             .buttonStyle(.plain)
             .padding(.trailing, 24)
-            .padding(.bottom, inputAreaHeight + 8) // Отступ от верхней границы input.
+            .padding(.bottom, inputAreaHeight + 8)
             .transition(.opacity)
         }
     }
 
     private var sendButton: some View {
         Button {
-
+            // Отправку подключим в WebSocket-шаге.
         } label: {
             Image(systemName: "paperplane.fill")
                 .font(.system(size: 16, weight: .semibold))
@@ -309,12 +325,38 @@ struct ChatView: View {
     // MARK: - Actions
 
     private func handleAppear() {
+        chatRealtimeStore.openChat(chatID: chatContext.id)
+
         messageText = chatDraftStore.draft(for: chatContext.id)
         loadMessages()
+    }
+    
+    private func handleDisappear() {
+        chatRealtimeStore.closeChat(chatID: chatContext.id)
     }
 
     private func saveDraft() {
         chatDraftStore.setDraft(messageText, for: chatContext.id)
+    }
+    
+    // Добавляет realtime-сообщение в открытый чат.
+    private func handleRealtimeMessage(_ proxy: ScrollViewProxy) {
+        guard let realtimeMessage = chatRealtimeStore.latestMessage else { return }
+        guard realtimeMessage.chatID == chatContext.id else { return }
+        guard !messages.contains(where: { $0.id == realtimeMessage.id }) else { return }
+
+        let shouldScrollToBottom = isAtBottom || realtimeMessage.senderID == chatContext.currentUserID
+
+        messages.append(realtimeMessage)
+
+        if shouldScrollToBottom {
+            DispatchQueue.main.async {
+                scrollToBottom(proxy)
+            }
+        } else if realtimeMessage.senderID != chatContext.currentUserID {
+            newIncomingMessagesCount += 1
+            chatRealtimeStore.incrementUnreadCount(for: chatContext.id)
+        }
     }
 
     // Открывает чат после первой загрузки истории.
@@ -326,6 +368,12 @@ struct ChatView: View {
         hasOpenedInitialPosition = true
 
         DispatchQueue.main.async {
+            if chatRealtimeStore.unreadCount(for: chatContext.id) > 0 {
+                chatScrollPositionStore.setPosition(.bottom, for: chatContext.id)
+                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+                return
+            }
+
             switch chatScrollPositionStore.position(for: chatContext.id) {
             case .message(let messageID):
                 proxy.scrollTo(messageID, anchor: .bottom)
@@ -337,17 +385,6 @@ struct ChatView: View {
         }
     }
 
-    // Обновляет флаг нижней позиции по положению bottom anchor.
-    private func updateIsAtBottom() {
-        guard scrollViewportHeight > 0 else { return }
-
-        isAtBottom = bottomAnchorMaxY <= scrollViewportHeight + bottomDetectionTolerance
-
-        if isAtBottom {
-            newIncomingMessagesCount = 0
-        }
-    }
-    
     // Обновляет scroll-позицию по видимым сообщениям.
     private func updateVisibleMessages(_ visibleIDs: [Int]) {
         guard hasOpenedInitialPosition else { return }
@@ -359,6 +396,7 @@ struct ChatView: View {
 
         if isLastMessageVisible {
             newIncomingMessagesCount = 0
+            chatRealtimeStore.markChatAsRead(chatID: chatContext.id)
             chatScrollPositionStore.setPosition(.bottom, for: chatContext.id)
             return
         }
@@ -367,7 +405,7 @@ struct ChatView: View {
             chatScrollPositionStore.setPosition(.message(id: messageID), for: chatContext.id)
         }
     }
-    
+
     // Скроллит чат вниз по нажатию кнопки.
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
         withAnimation(.easeOut(duration: 0.25)) {
@@ -377,6 +415,7 @@ struct ChatView: View {
         chatScrollPositionStore.setPosition(.bottom, for: chatContext.id)
         isAtBottom = true
         newIncomingMessagesCount = 0
+        chatRealtimeStore.markChatAsRead(chatID: chatContext.id)
     }
 
     // Загружает историю сообщении текущего чата.
@@ -414,4 +453,5 @@ struct ChatView: View {
     }
     .environmentObject(ChatDraftStore())
     .environmentObject(ChatScrollPositionStore())
+    .environmentObject(ChatRealtimeStore())
 }

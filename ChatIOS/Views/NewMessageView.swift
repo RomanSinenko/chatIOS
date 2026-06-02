@@ -1,132 +1,68 @@
 import SwiftUI
 
 struct NewMessageView: View {
-    // ID текущего пользователя
+    // MARK: - Input
+
     let currentUserID: Int
-    
-    // Session token передаём дальше в ChatView для защищённых запросов.
     let sessionToken: String
-    
-    // Контакты приложения пока не подключены, поэтому список пустой.
+
+    // MARK: - Local Data
+
     private let contacts: [Contact] = []
-    
-    // Текст, который пользователь вводит в поле поиска.
+
+    // MARK: - State
+
     @State private var searchText = ""
-    // Результаты глобального поиска по точному username.
     @State private var globalSearchResults: [UserSearchResult] = []
-    // true, пока ждём ответ backend по глобальному поиску.
     @State private var isSearchingGlobally = false
-    // Текст ошибки глобального поиска.
     @State private var searchErrorMessage: String?
-    // true, пока backend создает или возвращает private chat.
     @State private var isOpeningChat = false
-    // Текст ошибки открытия private chat.
     @State private var openChatErrorMessage: String?
-    // Данные чата, который нужно открыть после успешного ответа backend.
     @State private var selectedChat: ChatScreenContext?
 
-    
+    // MARK: - Dependencies
+
     private let apiClient = APIClient()
-    
-    
-    // Контакты, которые нужно показать с учетом текста поиска.
+
+    // MARK: - Computed Properties
+
     private var visibleContacts: [Contact] {
         if searchText.isEmpty {
             return contacts
         }
-        
+
         return contacts.filter { contact in
             contact.name.localizedCaseInsensitiveContains(searchText)
         }
     }
-    
-    
+
     private var isSearching: Bool {
         !searchText.isEmpty
     }
-    
+
     private var hasContactResults: Bool {
         !visibleContacts.isEmpty
     }
-    
+
     private var hasGlobalResults: Bool {
         !globalSearchResults.isEmpty
     }
-    
+
     private var hasAnyResults: Bool {
         hasContactResults || hasGlobalResults
     }
-    
-    
+
+    // MARK: - Body
+
     var body: some View {
         List {
-            Section {
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.secondary)
-                    
-                    TextField("Поиск", text: $searchText)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                }
-            }
-            
-            if !isSearching || hasContactResults {
-                Section("Контакты") {
-                    // Контакты приложения пока не подключены, поэтому строки не открывают чат.
-                    ForEach(visibleContacts) { contact in
-                            Text(contact.name)
-                    }
-                }
-            }
-            
-            if isSearchingGlobally || searchErrorMessage != nil || openChatErrorMessage != nil || hasGlobalResults {
-                Section("Глобальный поиск") {
-                    if isSearchingGlobally {
-                        Text("Ищем пользователя")
-                            .foregroundStyle(.secondary)
-                    } else if let searchErrorMessage {
-                        Text(searchErrorMessage)
-                            .foregroundStyle(.red)
-                    } else if let openChatErrorMessage {
-                        Text(openChatErrorMessage)
-                            .foregroundStyle(.red)
-                    } else {
-                        ForEach(globalSearchResults) { user in
-                            Button {
-                                openPrivateChat(with: user)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(user.displayName ?? user.username)
-                                        .font(.headline)
-                                        .foregroundStyle(.primary)
-                                    
-                                    Text("@\(user.username)")
-                                        .font(.footnote)
-                                        .foregroundStyle(.blue)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isOpeningChat)
-                        }
-                    }
-                }
-            }
-            if isSearching && !isSearchingGlobally && searchErrorMessage == nil && !hasAnyResults {
-                Section {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Нет результатов")
-                        
-                        Text("По запросу '\(searchText)' ничего не найдено")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
+            searchFieldSection
+            contactsSection
+            globalSearchSection
+            emptyResultsSection
         }
         .onChange(of: searchText) {
-            globalSearchResults = []
-            searchErrorMessage = nil
-            openChatErrorMessage = nil
+            resetSearchState()
             runGlobalSearch()
         }
         .navigationDestination(item: $selectedChat) { chatContext in
@@ -137,21 +73,115 @@ struct NewMessageView: View {
         }
         .navigationTitle("Написать сообщение")
     }
-    
+
+    // MARK: - Sections
+
+    private var searchFieldSection: some View {
+        Section {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+
+                TextField("Поиск", text: $searchText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var contactsSection: some View {
+        if !isSearching || hasContactResults {
+            Section("Контакты") {
+                ForEach(visibleContacts) { contact in
+                    Text(contact.name)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var globalSearchSection: some View {
+        if isSearchingGlobally || searchErrorMessage != nil || openChatErrorMessage != nil || hasGlobalResults {
+            Section("Глобальный поиск") {
+                globalSearchContent
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var globalSearchContent: some View {
+        if isSearchingGlobally {
+            Text("Ищем пользователя")
+                .foregroundStyle(.secondary)
+        } else if let searchErrorMessage {
+            Text(searchErrorMessage)
+                .foregroundStyle(.red)
+        } else if let openChatErrorMessage {
+            Text(openChatErrorMessage)
+                .foregroundStyle(.red)
+        } else {
+            ForEach(globalSearchResults) { user in
+                globalUserButton(user)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var emptyResultsSection: some View {
+        if isSearching && !isSearchingGlobally && searchErrorMessage == nil && !hasAnyResults {
+            Section {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Нет результатов")
+
+                    Text("По запросу '\(searchText)' ничего не найдено")
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func globalUserButton(_ user: UserSearchResult) -> some View {
+        Button {
+            openPrivateChat(with: user)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(user.displayName ?? user.username)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+
+                Text("@\(user.username)")
+                    .font(.footnote)
+                    .foregroundStyle(.blue)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(isOpeningChat)
+    }
+
+    // MARK: - Actions
+
+    // Сбрасывает результаты и ошибки перед новым поиском.
+    private func resetSearchState() {
+        globalSearchResults = []
+        searchErrorMessage = nil
+        openChatErrorMessage = nil
+    }
+
     // Запускает точный глобальный поиск пользователя по username.
     private func runGlobalSearch() {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        
+
         if query.isEmpty {
             globalSearchResults = []
             searchErrorMessage = nil
             return
         }
-        
+
         Task {
             isSearchingGlobally = true
             searchErrorMessage = nil
-            
+
             do {
                 let users = try await apiClient.searchUsers(
                     query: query,
@@ -164,27 +194,27 @@ struct NewMessageView: View {
                 searchErrorMessage = "Не удалось выполнить запрос"
                 print("Global search failed \(error)")
             }
-            
+
             isSearchingGlobally = false
         }
     }
-    
+
     // Создает или получает private chat с выбранным пользователем.
     private func openPrivateChat(with user: UserSearchResult) {
         print("Tapped global user \(user.id), current user \(currentUserID)")
         openChatErrorMessage = nil
-        
+
         Task {
             isOpeningChat = true
-            
+
             do {
                 let chat = try await apiClient.getOrCreatePrivateChat(
                     peerUserID: user.id,
                     sessionToken: sessionToken
                 )
-                
+
                 print("Opened private chat \(chat.id)")
-                
+
                 selectedChat = ChatScreenContext(
                     id: chat.id,
                     currentUserID: currentUserID,
@@ -195,7 +225,7 @@ struct NewMessageView: View {
                 openChatErrorMessage = "Не удалось открыть чат"
                 print("Open private chat failed \(error)")
             }
-            
+
             isOpeningChat = false
         }
     }
